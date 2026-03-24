@@ -1,11 +1,13 @@
 package co.edu.escuelaing.config;
 
+import co.edu.escuelaing.security.JwtFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -16,24 +18,25 @@ import java.util.List;
 @EnableWebSecurity
 public class SecurityConfig {
 
+    private final JwtFilter jwtFilter;
+
+    public SecurityConfig(JwtFilter jwtFilter) {
+        this.jwtFilter = jwtFilter;
+    }
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                // Activa CORS usando el bean corsConfigurationSource().
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                // Desactivamos CSRF para APIs REST stateless
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        // Permite preflight CORS desde el navegador
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        // Rutas públicas
                         .requestMatchers("/auth/login", "/").permitAll()
-                        // Todo lo demás requiere autenticación
                         .anyRequest().authenticated()
                 )
-                // Desactivamos el login form de Spring (usamos nuestro propio endpoint)
                 .formLogin(form -> form.disable())
-                .httpBasic(basic -> basic.disable());
+                .httpBasic(basic -> basic.disable())
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
@@ -42,8 +45,6 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        // Orígenes permitidos — Apache local y en EC2
-        // Cuando tengas la IP de tu EC2 la agregas aquí
         config.setAllowedOrigins(List.of(
                 "http://localhost",
                 "http://localhost:80",
@@ -63,4 +64,3 @@ public class SecurityConfig {
         return source;
     }
 }
-
