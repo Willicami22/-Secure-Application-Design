@@ -11,7 +11,7 @@ import org.springframework.boot.SpringApplication;
 public class Securespring3 {
     public static void main(String[] args) {
         SpringApplication app = new SpringApplication(Securespring3.class);
-        app.setDefaultProperties(Collections.singletonMap("server.port", 5000));
+        app.setDefaultProperties(Collections.singletonMap("server.port", 8080));
         app.run(args);
     }
 }
