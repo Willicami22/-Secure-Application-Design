@@ -50,7 +50,8 @@ public class SecurityConfig {
                 "http://localhost:3000",
                 "https://localhost",
                 "http://127.0.0.1",
-                "https://tdseci.duckdns.org"
+                "https://tdseci.duckdns.org",
+                "https://ec2-18-212-21-42.compute-1.amazonaws.com"
         ));
 
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
