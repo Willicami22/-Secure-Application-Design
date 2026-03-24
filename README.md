@@ -380,11 +380,11 @@ The file `src/main/resources/static/index.html` is a single-file HTML+CSS+JS cli
 
 ## Demo Video
 
-https://github.com/Willicami22/-Secure-Application-Design/blob/main/imgs/Demo.mp4
 
-<video src="imgs/Demo.mp4" controls width="100%">
-  Your browser does not support the video tag.
-</video>
+
+https://github.com/user-attachments/assets/20ea45ec-37f1-4050-ad5b-d250cb8db258
+
+
 
 ---
 
