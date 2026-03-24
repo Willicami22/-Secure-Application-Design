@@ -1,6 +1,6 @@
 # Enterprise Architecture Workshop: Secure Application Design
 
-A two-server secure architecture deployed on AWS, featuring an Apache HTTPS frontend and a Spring Boot REST backend, both protected with TLS and authentication.
+A two-server secure architecture deployed on AWS, featuring an Apache HTTPS frontend and a Spring Boot REST backend, both protected with TLS and JWT authentication.
 
 ---
 
@@ -13,12 +13,12 @@ Browser
    ▼
 ┌─────────────────────┐
 │   Server 1 (EC2)    │
-│   Apache HTTP       │
+│   Apache httpd      │
 │   tdseci.duckdns.org│
 │   Port 443          │
 └─────────────────────┘
           │
-          │  HTTPS (REST calls)
+          │  HTTPS + JWT (REST calls)
           ▼
 ┌─────────────────────┐
 │   Server 2 (EC2)    │
@@ -33,7 +33,7 @@ Browser
 | Frontend server | Apache httpd on Amazon Linux 2023 | Let's Encrypt via Certbot |
 | Backend API | Spring Boot 4.0.1 (Java 25) | Self-signed PKCS12 keystore |
 | DNS | DuckDNS free dynamic DNS | — |
-| Auth | BCrypt password hashing | — |
+| Auth | BCrypt + JWT (JJWT 0.12.6) | — |
 
 ---
 
@@ -44,7 +44,7 @@ Browser
   - Server 2 (Spring): port 8080 open
 - A free DuckDNS account and subdomain pointing to Server 1's public IP
 - Java 25 and Maven installed locally (for building the Spring app)
-- Docker installed on Server 2 (optional, for containerized deploy)
+- Docker installed on Server 2 (for containerized deploy)
 
 ---
 
@@ -139,9 +139,19 @@ Verify the secure connection in the browser:
 
 ![Apache serving over HTTPS](imgs/img9.png)
 
+### 5. Deploy the HTML+JS client
+
+Copy `src/main/resources/static/index.html` to the Apache document root on Server 1:
+
+```bash
+sudo cp index.html /var/www/html/index.html
+```
+
+The client will be served at `https://tdseci.duckdns.org/index.html`.
+
 ---
 
-## Server 2 — Spring Boot with TLS
+## Server 2 — Spring Boot with TLS and JWT
 
 ### 1. Generate the self-signed keystore
 
@@ -191,6 +201,23 @@ server.ssl.enabled=true
     <artifactId>spring-boot-starter-security</artifactId>
     <version>4.0.2</version>
 </dependency>
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-api</artifactId>
+    <version>0.12.6</version>
+</dependency>
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-impl</artifactId>
+    <version>0.12.6</version>
+    <scope>runtime</scope>
+</dependency>
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-jackson</artifactId>
+    <version>0.12.6</version>
+    <scope>runtime</scope>
+</dependency>
 ```
 
 ![pom.xml dependencies](imgs/img14.png)
@@ -227,6 +254,16 @@ Content-Type: application/json
 }
 ```
 
+Response now includes a JWT token:
+
+```json
+{
+  "success": true,
+  "message": "Login exitoso. Bienvenido, admin",
+  "token": "eyJhbGciOiJIUzI1NiJ9..."
+}
+```
+
 ![Login success](imgs/img15.png)
 
 **Invalid credentials (HTTP 401):**
@@ -252,7 +289,7 @@ The build stage compiles the application inside the container using Maven. Once 
 
 ### 2. Verify the Spring service is reachable
 
-Test the backend directly against the EC2 public DNS on port 8080. Since the certificate is self-signed, use a REST client with TLS verification disabled (`-k` with curl, or "Disable SSL verification" in tools like IntelliJ HTTP Client):
+Test the backend directly against the EC2 public DNS on port 8080. Since the certificate is self-signed, use a REST client with TLS verification disabled:
 
 ```
 GET https://<EC2_PUBLIC_DNS>:8080/
@@ -264,7 +301,7 @@ Expected response: `Greetings from Spring Boot!` with HTTP 200.
 
 ### 3. End-to-end test through the Apache frontend
 
-With both servers running, navigate to `https://tdseci.duckdns.org` in a browser. The Apache server delivers the async HTML+JS client, which calls the Spring backend on port 8080. Enter valid credentials and click **Iniciar sesión** — the client sends a `POST /auth/login` request to Spring and displays the response.
+With both servers running, navigate to `https://tdseci.duckdns.org` in a browser. The Apache server delivers the HTML+JS client, which calls the Spring backend on port 8080. Enter valid credentials and click **Iniciar sesión** — the client authenticates, receives a JWT, and can then call protected endpoints.
 
 ![Full application running end-to-end on AWS](imgs/img19.png)
 
@@ -277,9 +314,10 @@ With both servers running, navigate to `https://tdseci.duckdns.org` in a browser
 | HTTPS on Apache | Let's Encrypt certificate via Certbot |
 | HTTPS on Spring | Self-signed PKCS12 keystore (`keytool`) |
 | Password storage | BCrypt hashing via `BCryptPasswordEncoder` |
+| Session management | Stateless JWT tokens (expire in 1 hour) |
 | CSRF protection | Disabled (stateless REST API) |
 | CORS | Configured to allow only specific origins |
-| Public routes | Only `GET /` and `POST /auth/login` are unauthenticated |
+| Public routes | Only `GET /` and `POST /auth/login` — everything else requires a valid JWT |
 
 ### Pre-loaded users
 
@@ -297,32 +335,56 @@ Passwords are never stored in plain text — only their BCrypt hashes are kept i
 | Method | Endpoint | Auth required | Description |
 |---|---|---|---|
 | GET | `/` | No | Health check — returns greeting string |
-| POST | `/auth/login` | No | Authenticate user |
+| POST | `/auth/login` | No | Authenticate and receive JWT |
+| GET | `/api/secure` | Yes — Bearer token | Protected resource example |
 
-**Login request body:**
+**Login request:**
 ```json
-{
-  "username": "string",
-  "password": "string"
-}
+{ "username": "string", "password": "string" }
 ```
 
 **Login response:**
 ```json
 {
   "success": true,
-  "message": "Login exitoso. Bienvenido, admin"
+  "message": "Login exitoso. Bienvenido, admin",
+  "token": "eyJhbGciOiJIUzI1NiJ9..."
 }
 ```
+
+**Protected request:**
+```http
+GET /api/secure
+Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
+```
+
+**Without token → 403 Forbidden.**
+
+---
+
+## Test Client
+
+The file `src/main/resources/static/index.html` is a single-file HTML+CSS+JS client served automatically by Spring Boot at `https://localhost:8080/index.html`. It lets you interactively test every scenario:
+
+| Button | What it tests |
+|---|---|
+| Login | `POST /auth/login` — stores the JWT on success |
+| `GET /` (public) | Public endpoint, no token needed |
+| `GET /api/secure` (protected) | Sends the stored JWT — expects `200` |
+| `GET /api/secure` (no token) | Omits the header — expects `403` |
+| `POST /auth/login` (bad creds) | Wrong password — expects `401` |
+
+> **Note:** Because the certificate is self-signed, visit `https://localhost:8080/` directly first and accept the browser security exception before using the client.
 
 ---
 
 ## Demo Video
 
-> Video demonstrating the full deployment and security features:
+https://github.com/user-attachments/assets/Demo.mp4
 
-<!-- Replace this comment with the video link or embed once available -->
-> 🎥 _Video coming soon_
+<video src="imgs/Demo.mp4" controls width="100%">
+  Your browser does not support the video tag.
+</video>
 
 ---
 
